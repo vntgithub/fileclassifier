@@ -2,6 +2,9 @@ import os
 from posixpath import join
 import typer
 from keras.models import load_model
+import numpy as np
+import json
+import csv
 
 app = typer.Typer()
 
@@ -20,7 +23,7 @@ def get_data_csv_from_result_predict(arr_labels_predicted, arr_labels_name):
         for label in arr_labels_predicted:
             if label == i:
                 total_label += 1
-        acc_of_label = total_label/len_data
+        acc_of_label = (total_label/len_data)*100
         arr_row.append([arr_labels_name[i], acc_of_label])
     return arr_row
 
@@ -34,9 +37,31 @@ def make_output_file(output_name_file, arr_row):
     f.close()
 
 @app.command()
-def file_type_extract(data_dir: str):
-    typer.echo(f"Hello {data_dir}")
-
+def file_type_extract(
+  data_dir: str = typer.Argument(..., help="Data input directory"), 
+    block_size: int = typer.Argument(1024, help="For inference, valid block sizes --  512 and 4096 bytes. For training, a positive integer. [default: 4096]"), 
+    scenario: int = typer.Argument(1, help="Scenario to assume while classifying. Please refer README for more info. [default: 1]"),
+    type_name_to_extract: str = typer.Argument(...,help="Name of type file want to extract(lower case). [ex: jpg,json,...]"),
+    output_name_file: str = typer.Argument(...,help="Output extract output file name. [ex: jpg.npy]")):
+    if scenario < 1 or scenario > 6:
+        print('Exception. Scenario: 1-6')
+        exit()
+    if os.path.isfile('./data_extracted/' + output_name_file):
+        print('File alredy exist')
+        exit()
+    
+    data_input = np.load(data_dir)
+    model_name = os.path.join('model', '{}_{}.h5'.format(block_size, scenario))
+    model = load_model(model_name)
+    predict_result = model.predict(data_input)
+    arr_labels_predicted = [y.argmax() for y in predict_result]
+    arr_labels_name = open_db_labels(scenario)
+    index_label_want_extract = arr_labels_name.index(type_name_to_extract)
+    arr_result = []
+    for i in range(len(arr_labels_predicted)):
+      if arr_labels_predicted[i] == index_label_want_extract:
+        arr_result.append(data_input[i])
+    np.save(os.path.join('data_extracted',output_name_file), arr_result)
 @app.command()
 def analyze_data(
     data_dir: str = typer.Argument(..., help="Data input directory"), 
@@ -50,14 +75,14 @@ def analyze_data(
         print('File alredy exist')
         exit()
     
-    data_input = open(data_dir, "r")
+    data_input = np.load(data_dir)
     model_name = os.path.join('model', '{}_{}.h5'.format(block_size, scenario))
     model = load_model(model_name)
     predict_result = model.predict(data_input)
     arr_labels_predicted = [y.argmax() for y in predict_result]
     arr_labels_name = open_db_labels(scenario)
     arr_row = get_data_csv_from_result_predict(arr_labels_predicted, arr_labels_name)
-    make_output_file(arr_row)
+    make_output_file(output_name_file,arr_row)
 
 
 if __name__ == "__main__":
